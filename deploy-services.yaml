@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Deploy app service with Load Balancing and Auto Scaling
+Parameters:
+  ClusterStackName:
+    Type: String
+    Description: Name for the ECS Cluster stack (used to separate multiple setups)
+  VPCID:
+    Type: 'AWS::EC2::VPC::Id'
+  Subnet1ID:
+    Type: 'AWS::EC2::Subnet::Id'
+  Subnet2ID:
+    Type: 'AWS::EC2::Subnet::Id'
+Resources:
+  TaskRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      RoleName: !Sub '${AWS::StackName}-task-role'
+      Path: /
+  TaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: !Sub '${AWS::StackName}-task-definition'
+      ExecutionRoleArn: !ImportValue ecs-stack-v1-TaskExecutionRoleArn
+      TaskRoleArn: !GetAtt 
+        - TaskRole
+        - Arn
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-task-definition'
+      ContainerDefinitions:
+        - Name: nginx
+          Image: nginx
+          Cpu: 64
+          Memory: 64
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: nginx
+          PortMappings:
+            - ContainerPort: 80
+  Service:
+    Type: 'AWS::ECS::Service'
+    DependsOn: HttpListener
+    Properties:
+      Cluster: !ImportValue ecs-stack-v1-ClusterId
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 75
+      DesiredCount: 2
+      EnableECSManagedTags: true
+      LaunchType: EC2
+      LoadBalancers:
+        - ContainerName: nginx
+          ContainerPort: 80
+          TargetGroupArn: !Ref TargetGroup
+      TaskDefinition: !Ref TaskDefinition
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-service'
+  LogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      RetentionInDays: 30
+      LogGroupName: !Sub '${AWS::StackName}'
+  LoadBalancerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-alb-sg'
+      GroupDescription: !Sub 'Security group for ${AWS::StackName} ALB'
+      VpcId: !Ref VPCID
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-alb-sg'
+  ContainerInstanceLoadBalancerIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      Description: !Sub 'Allow access from ${AWS::StackName} ALB'
+      GroupId: !ImportValue ecs-stack-v1-SecurityGroupId
+      IpProtocol: '-1'
+      SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+  LoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: !Sub '${AWS::StackName}-lb'
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Subnets:
+        - !Ref Subnet1ID
+        - !Ref Subnet2ID
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-lb'
+      Type: application
+  TargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 6
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-lb-tg'
+      VpcId: !Ref VPCID
+  HttpListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+  ServiceScalableTarget:
+    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId: !Sub 
+        - 'service/${Cluster}/${Service.Name}'
+        - Cluster: !ImportValue ecs-stack-v1-ClusterId
+      RoleARN: !Sub >-
+        arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+      ScalableDimension: 'ecs:service:DesiredCount'
+      ServiceNamespace: ecs
+  ServiceTargetTrackingPolicy:
+    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
+    Properties:
+      PolicyName: TargetTrackingScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ServiceScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 80
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
