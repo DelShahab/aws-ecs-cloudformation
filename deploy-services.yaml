@@ -173,3 +173,9 @@ Resources:
         ScaleOutCooldown: 60
         PredefinedMetricSpecification:
           PredefinedMetricType: ECSServiceAverageCPUUtilization
+Outputs:
+  AppDomainName:
+    Description: App Domain name  
+    Value: !Join ['', ['http://', !GetAtt LoadBalancer.DNSName, '/']]
+    Export:
+      Name: 'AppDomainName'
