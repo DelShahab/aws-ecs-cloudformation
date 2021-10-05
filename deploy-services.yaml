@@ -24,7 +24,7 @@ Parameters:
                  will handle the traffic for this service
   ContainerPort:
     Type: Number
-    Default: 80
+    Default: 8080
     Description: What port number the application inside the docker container is binding to
   ContainerCpu:
     Type: Number
@@ -38,6 +38,10 @@ Parameters:
     Type: Number
     Default: 2
     Description: How many copies of the service task to run
+  CidrIp:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: IP Cidr for Security  
     
 Resources:
   TaskDefinition:
@@ -93,7 +97,7 @@ Resources:
       VpcId: !Ref VPCID
       SecurityGroupIngress:
         - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref CidrIp
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-alb-sg'
