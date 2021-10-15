@@ -1,32 +1,39 @@
-AWSTemplateFormatVersion: '2010-09-09'
-Description: Nginx service with Load Balancing and Auto Scaling
+AWSTemplateFormatVersion: 2010-09-09
+Description: Docker service with Load Balancing and Auto Scaling
 Parameters:
   ClusterStackName:
     Type: String
-    Description: Name for the ECS Cluster stack (used to separate multiple setups)
-
+    Description: Name for the ECS Cluster Stack (used in setting up cluster)
+  VPCID:
+    Type: 'AWS::EC2::VPC::Id'
+  Subnet1ID:
+    Type: 'AWS::EC2::Subnet::Id'
+  Subnet2ID:
+    Type: 'AWS::EC2::Subnet::Id'
 Resources:
   TaskRole:
-    Type: AWS::IAM::Role
+    Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
         Statement:
-        - Effect: Allow
-          Principal:
-            Service: ecs-tasks.amazonaws.com
-          Action: sts:AssumeRole
-      RoleName: !Sub ${AWS::StackName}-task-role
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      RoleName: !Sub '${AWS::StackName}-task-role'
       Path: /
-
   TaskDefinition:
-    Type: AWS::ECS::TaskDefinition
+    Type: 'AWS::ECS::TaskDefinition'
     Properties:
-      Family: !Sub ${AWS::StackName}-task-definition
-      ExecutionRoleArn:
-        Fn::ImportValue: !Sub ecs-${ClusterStackName}-TaskExecutionRoleArn
-      TaskRoleArn: !GetAtt TaskRole.Arn
+      Family: !Sub '${AWS::StackName}-task-definition'
+      ExecutionRoleArn: !ImportValue 
+        'Fn::Sub': 'ecs-${ClusterStackName}-TaskExecutionRoleArn'
+      TaskRoleArn: !GetAtt 
+        - TaskRole
+        - Arn
       Tags:
-        - { Key: Name, Value: !Sub '${AWS::StackName}-task-definition' }
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-task-definition'
       ContainerDefinitions:
         - Name: nginx
           Image: nginx
@@ -35,18 +42,17 @@ Resources:
           LogConfiguration:
             LogDriver: awslogs
             Options:
-              awslogs-region: !Ref AWS::Region
+              awslogs-region: !Ref 'AWS::Region'
               awslogs-group: !Ref LogGroup
               awslogs-stream-prefix: nginx
           PortMappings:
             - ContainerPort: 80
-
   Service:
-    Type: AWS::ECS::Service
+    Type: 'AWS::ECS::Service'
     DependsOn: HttpListener
     Properties:
-      Cluster:
-        Fn::ImportValue: !Sub ecs-${ClusterStackName}-ClusterId
+      Cluster: !ImportValue 
+        'Fn::Sub': 'ecs-${ClusterStackName}-ClusterId'
       DeploymentConfiguration:
         MaximumPercent: 200
         MinimumHealthyPercent: 75
@@ -59,55 +65,51 @@ Resources:
           TargetGroupArn: !Ref TargetGroup
       TaskDefinition: !Ref TaskDefinition
       Tags:
-        - { Key: Name, Value: !Sub '${AWS::StackName}-service' }
-
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-service'
   LogGroup:
-    Type: AWS::Logs::LogGroup
+    Type: 'AWS::Logs::LogGroup'
     Properties:
       RetentionInDays: 30
-      LogGroupName: !Sub ${AWS::StackName}
-
+      LogGroupName: !Sub '${AWS::StackName}'
   LoadBalancerSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
+    Type: 'AWS::EC2::SecurityGroup'
     Properties:
-      GroupName: !Sub ${AWS::StackName}-alb-sg
-      GroupDescription: !Sub Security group for ${AWS::StackName} ALB
-      VpcId: !ImportValue infra-vpc-VpcId
+      GroupName: !Sub '${AWS::StackName}-alb-sg'
+      GroupDescription: !Sub 'Security group for ${AWS::StackName} ALB'
+      VpcId: !Ref VPCID
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
       Tags:
-        - { Key: Name, Value: !Sub '${AWS::StackName}-alb-sg' }
-
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-alb-sg'
   ContainerInstanceLoadBalancerIngress:
-    Type: AWS::EC2::SecurityGroupIngress
+    Type: 'AWS::EC2::SecurityGroupIngress'
     Properties:
-      Description: !Sub Allow access from ${AWS::StackName} ALB
-      GroupId:
-        Fn::ImportValue: !Sub ecs-${ClusterStackName}-SecurityGroupId
+      Description: !Sub 'Allow access from ${AWS::StackName} ALB'
+      GroupId: !ImportValue 
+        'Fn::Sub': 'ecs-${ClusterStackName}-SecurityGroupId'
       IpProtocol: '-1'
-      SourceSecurityGroupId: !Ref 'LoadBalancerSecurityGroup'
-
-  ## Load Balancing ##
-
+      SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
   LoadBalancer:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
     Properties:
       Name: !Sub '${AWS::StackName}-lb'
       Scheme: internet-facing
       SecurityGroups:
         - !Ref LoadBalancerSecurityGroup
       Subnets:
-        - Fn::ImportValue: infra-vpc-sn-public-a
-        - Fn::ImportValue: infra-vpc-sn-public-b
+        - !Ref Subnet1ID
+        - !Ref Subnet2ID
       Tags:
-        - { Key: Name, Value: !Sub '${AWS::StackName}-lb' }
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-lb'
       Type: application
-
   TargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
     Properties:
       HealthCheckIntervalSeconds: 6
       HealthCheckPath: /
@@ -118,47 +120,42 @@ Resources:
       Protocol: HTTP
       UnhealthyThresholdCount: 2
       TargetGroupAttributes:
-        - { Key: deregistration_delay.timeout_seconds, Value: '30' }
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
       Tags:
-        - { Key: Name, Value: !Sub '${AWS::StackName}-lb-tg' }
-      VpcId:
-        Fn::ImportValue: infra-vpc-VpcId
-
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-lb-tg'
+      VpcId: !Ref VPCID
   HttpListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
     Properties:
       DefaultActions:
-      - TargetGroupArn: !Ref TargetGroup
-        Type: forward
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
       LoadBalancerArn: !Ref LoadBalancer
       Port: 80
       Protocol: HTTP
-
-  ## Auto Scaling ##
-
   ServiceScalableTarget:
-    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Type: 'AWS::ApplicationAutoScaling::ScalableTarget'
     Properties:
       MaxCapacity: 10
       MinCapacity: 1
-      ResourceId:
-        Fn::Sub:
-          - service/${Cluster}/${Service.Name}
-          - Cluster:
-              Fn::ImportValue: !Sub ecs-${ClusterStackName}-ClusterId
-      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
-      ScalableDimension: ecs:service:DesiredCount
+      ResourceId: !Sub 
+        - 'service/${Cluster}/${Service.Name}'
+        - Cluster: !ImportValue 
+            'Fn::Sub': 'ecs-${ClusterStackName}-ClusterId'
+      RoleARN: !Sub >-
+        arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+      ScalableDimension: 'ecs:service:DesiredCount'
       ServiceNamespace: ecs
-
   ServiceTargetTrackingPolicy:
-    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Type: 'AWS::ApplicationAutoScaling::ScalingPolicy'
     Properties:
       PolicyName: TargetTrackingScalingPolicy
       PolicyType: TargetTrackingScaling
-      ScalingTargetId:
-        Ref: ServiceScalableTarget
+      ScalingTargetId: !Ref ServiceScalableTarget
       TargetTrackingScalingPolicyConfiguration:
-        TargetValue: 80.0
+        TargetValue: 80
         ScaleInCooldown: 60
         ScaleOutCooldown: 60
         PredefinedMetricSpecification:
