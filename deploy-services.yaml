@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Sample service with Load Balancing and Auto Scaling
+Description: Nginx service with Load Balancing and Auto Scaling
 Parameters:
   ClusterStackName:
     Type: String
