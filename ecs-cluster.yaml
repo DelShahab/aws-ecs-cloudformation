@@ -1,200 +1,163 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: ECS Cluster with EC2 Auto Scaling Group capacity
+Description: Amazon ECS Cluster with EC2 Auto Scaling Group capacity
+
 Parameters:
   AmiId:
-    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
+
   ClusterStackName:
     Type: String
     Description: Name for the ECS Cluster stack (used to separate multiple setups)
-  VPCID:
-    Type: 'AWS::EC2::VPC::Id'
-  Subnet1ID:
-    Type: 'AWS::EC2::Subnet::Id'
-  Subnet2ID:
-    Type: 'AWS::EC2::Subnet::Id'
+
 Resources:
+
   Cluster:
-    Type: 'AWS::ECS::Cluster'
+    Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: !Sub '${AWS::StackName}'
+      ClusterName: !Sub ${AWS::StackName}
       Tags:
-        - Key: Name
-          Value: !Sub '${AWS::StackName}'
-    Metadata:
-      'AWS::CloudFormation::Designer':
-        id: ee3aa771-2834-4697-af71-f54a76f49dee
+        - { Key: Name, Value: !Sub '${AWS::StackName}' }
+
   ContainerInstanceRole:
-    Type: 'AWS::IAM::Role'
+    Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
         Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action: 'sts:AssumeRole'
-      Description: !Sub 'Amazon ECS Container Instance Role for ${Cluster}'
-      RoleName: !Sub '${AWS::StackName}-container-instance-role'
+        - Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: 'sts:AssumeRole'
+      Description: !Sub Amazon ECS Container Instance Role for ${Cluster}
+      RoleName: !Sub ${AWS::StackName}-container-instance-role
       Path: /
       ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
-        - PolicyName: AgentManagementPolicy
-          PolicyDocument:
-            Statement:
-              - Sid: AllowGlobalActions
-                Effect: Allow
-                Action:
-                  - 'ecs:DiscoverPollEndpoint'
-                Resource: '*'
-              - Sid: AllowClusterScopedActions
-                Effect: Allow
-                Action:
-                  - 'ecs:DeregisterContainerInstance'
-                  - 'ecs:RegisterContainerInstance'
-                  - 'ecs:Submit*'
-                Resource:
-                  - !GetAtt 
-                    - Cluster
-                    - Arn
-              - Sid: AllowContainerInstanceScopedActions
-                Effect: Allow
-                Action:
-                  - 'ecs:Poll'
-                  - 'ecs:StartTelemetrySession'
-                Resource:
-                  - !Sub >-
-                    arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:container-instance/${Cluster}/*
-    Metadata:
-      'AWS::CloudFormation::Designer':
-        id: 031d35af-4481-4a2a-a58b-ab913db97c8a
+      - PolicyName: AgentManagementPolicy
+        PolicyDocument:
+          Statement:
+          - Sid: AllowGlobalActions
+            Effect: Allow
+            Action:
+              - ecs:DiscoverPollEndpoint
+            Resource: '*'
+
+          - Sid: AllowClusterScopedActions
+            Effect: Allow
+            Action:
+              - ecs:DeregisterContainerInstance
+              - ecs:RegisterContainerInstance
+              - ecs:Submit*
+            Resource:
+              - !GetAtt Cluster.Arn
+
+          - Sid: AllowContainerInstanceScopedActions
+            Effect: Allow
+            Action:
+              - ecs:Poll
+              - ecs:StartTelemetrySession
+            Resource:
+              - !Sub arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:container-instance/${Cluster}/*
+
   ContainerInstanceProfile:
-    Type: 'AWS::IAM::InstanceProfile'
+    Type: AWS::IAM::InstanceProfile
     Properties:
-      InstanceProfileName: !Sub '${AWS::StackName}-container-instance-profile'
+      InstanceProfileName: !Sub ${AWS::StackName}-container-instance-profile
       Path: /
       Roles:
         - !Ref ContainerInstanceRole
-    Metadata:
-      'AWS::CloudFormation::Designer':
-        id: 6ed6094a-ff7b-4278-a477-957aa89a02d5
+
   TaskExecutionRole:
-    Type: 'AWS::IAM::Role'
+    Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
         Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: 'sts:AssumeRole'
-      Description: !Sub 'Amazon ECS Task Execution Role for ${Cluster}'
-      RoleName: !Sub '${AWS::StackName}-task-execution-role'
+        - Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+      Description: !Sub Amazon ECS Task Execution Role for ${Cluster}
+      RoleName: !Sub ${AWS::StackName}-task-execution-role
       Path: /
-    Metadata:
-      'AWS::CloudFormation::Designer':
-        id: 5262001a-a833-4d95-85db-83c69fc5a0a0
+
   AgentExecutionPolicy:
-    Type: 'AWS::IAM::Policy'
+    Type: AWS::IAM::Policy
     Properties:
       PolicyName: AgentExecutionPolicy
       PolicyDocument:
-        Version: 2012-10-17
+        Version: "2012-10-17"
         Statement:
           - Sid: AllowImagePulls
             Effect: Allow
             Action:
-              - 'ecr:GetAuthorizationToken'
-              - 'ecr:BatchCheckLayerAvailability'
-              - 'ecr:BatchGetImage'
-              - 'ecr:GetDownloadUrlForLayer'
+              - ecr:GetAuthorizationToken
+              - ecr:BatchCheckLayerAvailability
+              - ecr:BatchGetImage
+              - ecr:GetDownloadUrlForLayer
             Resource: '*'
+
           - Sid: AllowLogging
             Effect: Allow
             Action:
-              - 'logs:CreateLogStream'
-              - 'logs:PutLogEvents'
+              - logs:CreateLogStream
+              - logs:PutLogEvents
             Resource: '*'
       Roles:
         - !Ref ContainerInstanceRole
         - !Ref TaskExecutionRole
-    Metadata:
-      'AWS::CloudFormation::Designer':
-        id: 6a661ec2-c243-4180-8d78-3624df980884
+
   ContainerInstanceSecurityGroup:
-    Type: 'AWS::EC2::SecurityGroup'
+    Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Sub '${AWS::StackName}-sg'
-      GroupDescription: !Sub 'Security group for ${Cluster} container instances'
-      VpcId: !Ref VPCID
+      GroupName: !Sub ${AWS::StackName}-sg
+      GroupDescription: !Sub Security group for ${Cluster} container instances
+      VpcId: !ImportValue infra-vpc-VpcId
       Tags:
-        - Key: Name
-          Value: !Sub '${AWS::StackName}-sg'
-    Metadata:
-      'AWS::CloudFormation::Designer':
-        id: a3231bc6-939c-4429-bbb0-8f00a83689b3
+        - { Key: Name, Value: !Sub '${AWS::StackName}-sg' }
+
   NodeLaunchTemplate:
-    Type: 'AWS::EC2::LaunchTemplate'
+    Type: AWS::EC2::LaunchTemplate
     Properties:
-      LaunchTemplateName: !Sub '${AWS::StackName}-template'
+      LaunchTemplateName: !Sub ${AWS::StackName}-template
       LaunchTemplateData:
         IamInstanceProfile:
-          Arn: !GetAtt 
-            - ContainerInstanceProfile
-            - Arn
+          Arn: !GetAtt ContainerInstanceProfile.Arn
         ImageId: !Ref AmiId
         SecurityGroupIds:
           - !Ref ContainerInstanceSecurityGroup
         TagSpecifications:
           - ResourceType: instance
             Tags:
-              - Key: Name
-                Value: !Sub '${AWS::StackName}-node'
+              - { Key: Name, Value: !Sub '${AWS::StackName}-node' }
           - ResourceType: volume
             Tags:
-              - Key: Name
-                Value: !Sub '${AWS::StackName}-volume'
-        UserData: !Base64 
-          'Fn::Sub': >
-            #!/bin/bash
+              - { Key: Name, Value: !Sub '${AWS::StackName}-volume' }
+        UserData:
+          Fn::Base64:
+            !Sub |
+              #!/bin/bash
+              set -o xtrace
 
-            set -o xtrace
+              # Setup SSM for remote management
+              yum install -y amazon-ssm-agent
+              systemctl start amazon-ssm-agent
 
+              # Configure ECS Agent
+              echo ECS_CLUSTER=${Cluster} >> /etc/ecs/ecs.config
 
-            # Setup SSM for remote management
+              # Block container access to EC2 Instance Metadata
+              yum install -y iptables-services
+              iptables --insert FORWARD 1 --in-interface docker+ --destination 169.254.169.254/32 --jump DROP
+              iptables-save | tee /etc/sysconfig/iptables
+              systemctl enable --now iptables
 
-            yum install -y amazon-ssm-agent
+              # Signal success to CloudFormation
+              yum install -y aws-cfn-bootstrap
+              /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource ECSAutoScalingGroup --region ${AWS::Region}
 
-            systemctl start amazon-ssm-agent
-
-
-            # Configure ECS Agent
-
-            echo ECS_CLUSTER=${Cluster} >> /etc/ecs/ecs.config
-
-
-            # Block container access to EC2 Instance Metadata
-
-            yum install -y iptables-services
-
-            iptables --insert FORWARD 1 --in-interface docker+ --destination
-            169.254.169.254/32 --jump DROP
-
-            iptables-save | tee /etc/sysconfig/iptables
-
-            systemctl enable --now iptables
-
-
-            # Signal success to CloudFormation
-
-            yum install -y aws-cfn-bootstrap
-
-            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource
-            ECSAutoScalingGroup --region ${AWS::Region}
-    Metadata:
-      'AWS::CloudFormation::Designer':
-        id: 35bbb33a-3f45-4b2b-9a6a-0a4453f1a003
   ECSAutoScalingGroup:
-    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Type: AWS::AutoScaling::AutoScalingGroup
     CreationPolicy:
       ResourceSignal:
         Timeout: PT15M
@@ -202,7 +165,7 @@ Resources:
       AutoScalingRollingUpdate:
         MinInstancesInService: 1
         PauseTime: PT15M
-        WaitOnResourceSignals: true
+        WaitOnResourceSignals: True
     Properties:
       MixedInstancesPolicy:
         InstancesDistribution:
@@ -210,118 +173,34 @@ Resources:
         LaunchTemplate:
           LaunchTemplateSpecification:
             LaunchTemplateId: !Ref NodeLaunchTemplate
-            Version: !GetAtt 
-              - NodeLaunchTemplate
-              - LatestVersionNumber
+            Version: !GetAtt NodeLaunchTemplate.LatestVersionNumber
           Overrides:
-            - InstanceType: t2.small
+            - InstanceType: m5.large
+            - InstanceType: c5.large
       DesiredCapacity: '1'
       MinSize: '0'
       MaxSize: '10'
       VPCZoneIdentifier:
-        - !Ref Subnet1ID
-        - !Ref Subnet2ID
+        - Fn::ImportValue: infra-vpc-sn-public-a
+        - Fn::ImportValue: infra-vpc-sn-public-b
       Tags:
-        - Key: Name
-          Value: !Sub '${AWS::StackName}-asg'
-          PropagateAtLaunch: false
-    Metadata:
-      'AWS::CloudFormation::Designer':
-        id: a38e667b-2f01-4c13-93df-6bc9859ed8bd
+        - { Key: Name, Value: !Sub '${AWS::StackName}-asg', PropagateAtLaunch: false }
+
 Outputs:
   TaskExecutionRoleArn:
     Description: ARN of the ECS Task Execution Role (for Fargate)
-    Value: !GetAtt 
-      - TaskExecutionRole
-      - Arn
+    Value: !GetAtt TaskExecutionRole.Arn
     Export:
-      Name: !Sub 'ecs-${ClusterStackName}-TaskExecutionRoleArn'
+      Name: !Sub ecs-${ClusterStackName}-TaskExecutionRoleArn
+
   ClusterId:
     Description: The name / id of the ECS cluster
     Value: !Ref Cluster
     Export:
-      Name: !Sub 'ecs-${ClusterStackName}-ClusterId'
+      Name: !Sub ecs-${ClusterStackName}-ClusterId
+
   ContainerInstanceSecurityGroupId:
     Description: Security group ID of the ECS cluster container instances
     Value: !Ref ContainerInstanceSecurityGroup
     Export:
-      Name: !Sub 'ecs-${ClusterStackName}-SecurityGroupId'
-Metadata:
-  'AWS::CloudFormation::Designer':
-    a3231bc6-939c-4429-bbb0-8f00a83689b3:
-      size:
-        width: 60
-        height: 60
-      position:
-        x: 60
-        'y': 90
-      z: 1
-      embeds: []
-    5262001a-a833-4d95-85db-83c69fc5a0a0:
-      size:
-        width: 60
-        height: 60
-      position:
-        x: 180
-        'y': 90
-      z: 1
-      embeds: []
-    ee3aa771-2834-4697-af71-f54a76f49dee:
-      size:
-        width: 60
-        height: 60
-      position:
-        x: 60
-        'y': 210
-      z: 1
-      embeds: []
-    031d35af-4481-4a2a-a58b-ab913db97c8a:
-      size:
-        width: 60
-        height: 60
-      position:
-        x: 180
-        'y': 210
-      z: 1
-      embeds: []
-    6a661ec2-c243-4180-8d78-3624df980884:
-      size:
-        width: 60
-        height: 60
-      position:
-        x: 300
-        'y': 90
-      z: 1
-      embeds: []
-      isassociatedwith:
-        - 031d35af-4481-4a2a-a58b-ab913db97c8a
-        - 5262001a-a833-4d95-85db-83c69fc5a0a0
-    6ed6094a-ff7b-4278-a477-957aa89a02d5:
-      size:
-        width: 60
-        height: 60
-      position:
-        x: 300
-        'y': 210
-      z: 1
-      embeds: []
-      isassociatedwith:
-        - 031d35af-4481-4a2a-a58b-ab913db97c8a
-    35bbb33a-3f45-4b2b-9a6a-0a4453f1a003:
-      size:
-        width: 60
-        height: 60
-      position:
-        x: 60
-        'y': 330
-      z: 1
-      embeds: []
-    a38e667b-2f01-4c13-93df-6bc9859ed8bd:
-      size:
-        width: 60
-        height: 60
-      position:
-        x: 180
-        'y': 330
-      z: 1
-      embeds: []
+      Name: !Sub ecs-${ClusterStackName}-SecurityGroupId
